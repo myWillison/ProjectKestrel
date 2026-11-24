@@ -189,6 +189,14 @@
       const myVer = ++_renderScenesVersion;
       const minC = parseFloat(el('#speciesConf').value) || 0;
       const search = el('#search').value;
+      // A Chinese query is matched against the display-name overlay, so make
+      // sure it's fetched before the filter runs -- once, then repaint. The
+      // version guard skips the repaint if a newer render already happened.
+      if (!zhMapReady() && hasCjkText(search) && typeof ensureSpeciesZhMap === 'function') {
+        ensureSpeciesZhMap().then(() => {
+          if (_renderScenesVersion === myVer) renderScenes();
+        });
+      }
       const sortBy = el('#sortBy').value;
       const reviewStateFilter = document.getElementById('filterSceneReviewState')?.value
         || getSetting('sceneReviewFilter', 'all');
@@ -516,10 +524,15 @@
         if (firstPill) {
           const c = document.createElement('span');
           c.className = s.isApproved ? 'chip manual-approved' : 'chip';
-          if (_showSciOnCards) c.classList.add('chip--with-sci');
+          // Chinese mode leads with the translated name and stacks the
+          // canonical English name underneath (unless the Latin binomial
+          // already occupies that second line).
+          const shown = labelDisplayName(firstPill);
+          const translated = shown !== firstPill;
+          if (_showSciOnCards || translated) c.classList.add('chip--with-sci');
           const primary = document.createElement('span');
           primary.className = 'chip-primary';
-          primary.textContent = firstPill;
+          primary.textContent = shown;
           c.appendChild(primary);
           let titleStr = firstPill;
           if (_showSciOnCards) {
@@ -533,6 +546,11 @@
               c.appendChild(sci);
               titleStr = `${firstPill} — ${sciText}`;
             }
+          } else if (translated) {
+            const alt = document.createElement('span');
+            alt.className = 'chip-alt';
+            alt.textContent = firstPill;
+            c.appendChild(alt);
           }
           c.title = titleStr;
           pillsWrap.appendChild(c);

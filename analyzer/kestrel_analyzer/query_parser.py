@@ -44,13 +44,21 @@ eating feeding sitting standing walking swimming wading looking close closeup up
 AMBIGUOUS = frozenset({"rail", "swift", "tit", "shag", "booby", "sora", "ruff", "post"})
 
 _APOS = re.compile(r"[’'`]")
-_NONWORD = re.compile(r"[^0-9a-z ]+")
+# Keep CJK ideographs intact -- the Chinese species-name overlay (see
+# ``species_names``) is searched with the same n-gram pass as English names.
+_CJK_RANGES = "\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
+_CJK = re.compile(f"[{_CJK_RANGES}]")
+_ASCII_LETTER = re.compile(r"[a-z]")
+_NONWORD = re.compile(f"[^0-9a-z{_CJK_RANGES} ]+")
+_CJK_GAP = re.compile(f"(?<=[{_CJK_RANGES}])\\s+(?=[{_CJK_RANGES}])")
 
 
 def normalize(text: str) -> str:
     t = _APOS.sub("", str(text or "").lower())
     t = t.replace("-", " ").replace("/", " ")
     t = _NONWORD.sub(" ", t)
+    # "白 鹭" (typed with a stray space) folds onto the catalog's "白鹭".
+    t = _CJK_GAP.sub("", t)
     return " ".join(t.split())
 
 
@@ -160,24 +168,34 @@ class QueryIndex:
             catalog = get_catalog()
         if wildlife_labels is None:
             wildlife_labels = _load_wildlife_labels()
+        from .species_names import zh_family_for_scientific
         self.by_key: Dict[str, List[Target]] = {}
         fam_regions: Dict[str, Set[str]] = {}
         fam_sci: Dict[str, str] = {}
+        fam_zh: Dict[str, str] = {}
         for r in catalog.records:
             t = Target("species", r.canonical_common_name, r.scientific_name, frozenset(r.regions),
                        bool(getattr(r, "is_model_species", False)))
             for name in (r.canonical_common_name, *tuple(r.aliases or ()), r.scientific_name):
                 self._add(name, t)
+            # Chinese display name from the overlay (when shipped).
+            if getattr(r, "zh_name", ""):
+                self._add(r.zh_name, t)
             if r.family_common:
                 fam_regions.setdefault(r.family_common, set()).update(r.regions)
                 if r.family_sci:
                     fam_sci.setdefault(r.family_common, r.family_sci)
+                    fz = zh_family_for_scientific(r.family_sci)
+                    if fz:
+                        fam_zh.setdefault(r.family_common, fz)
         for fam, regs in fam_regions.items():
             t = Target("family", fam, fam_sci.get(fam, ""), frozenset(regs))
             for part in family_parts(fam):
                 self._add(part, t)
             if fam_sci.get(fam):
                 self._add(fam_sci[fam], t)
+            if fam_zh.get(fam):
+                self._add(fam_zh[fam], t)
         for lab in wildlife_labels or ():
             common = str(lab.get("common_name") or "").strip()
             if not common or common.endswith((" species", " family")):
@@ -298,11 +316,28 @@ def parse_query(
             k = " ".join(keys[i:i + n])
             if not k or k in disabled:
                 continue
-            if n == 1 and (k in STOPWORDS or k in AMBIGUOUS or len(k) < 3):
+            if n == 1 and (k in STOPWORDS or k in AMBIGUOUS):
+                continue
+            # Short keys are noise in English ("ru", "do") but plenty of
+            # Chinese bird names are two characters (鸳鸯, 白鹭, 画眉), so the
+            # length floor only applies to non-CJK keys.
+            if n == 1 and len(k) < 3 and not _CJK.search(k):
                 continue
             if n > 1 and all(w in STOPWORDS for w in k.split()):
                 continue
-            targets, fuzzy = index.lookup(k, allow_fuzzy=(n > 1 or len(k) >= 5))
+            # A space typed between two ideographs of one name ("大白 鹭") only
+            # splits the n-gram, so also try the collapsed key. Two *separate*
+            # Chinese names ("白鹭 鸳鸯") stay unmatched here and then match one
+            # at a time on the shorter n-grams.
+            targets, fuzzy = [], False
+            cand_keys = (k,)
+            collapsed = _CJK_GAP.sub("", k)
+            if collapsed != k:
+                cand_keys = (k, collapsed)
+            for cand_key in cand_keys:
+                targets, fuzzy = index.lookup(cand_key, allow_fuzzy=(n > 1 or len(cand_key) >= 5))
+                if targets:
+                    break
             if not targets:
                 continue
             best = max(targets, key=lambda t: rank(t, fuzzy))
@@ -318,7 +353,9 @@ def parse_query(
             if words:
                 last_word.setdefault(singular(words[-1]), []).append(label)
         for i, k in enumerate(keys):
-            if used[i] or blocked[i] or not k or k in STOPWORDS or len(k) < 3 or " " in k:
+            if used[i] or blocked[i] or not k or k in STOPWORDS or " " in k:
+                continue
+            if len(k) < 3 and not _CJK.search(k):
                 continue
             labels = last_word.get(k)
             if labels:
@@ -353,7 +390,14 @@ def semantic_text(parsed: ParsedQuery) -> str:
     if not rem:
         return ""
     if parsed.matches:
-        return parsed.query.strip()
+        text = parsed.query.strip()
+        # SigLIP 2's text tower is English-only, so an all-Chinese phrase
+        # ("大白鹭 在飞") would embed as noise. The chips already restrict the
+        # candidates, so fall back to the documented filter-only ordering
+        # (best quality first) instead of ranking by a meaningless similarity.
+        if not _ASCII_LETTER.search(text):
+            return ""
+        return text
     return rem
 
 

@@ -197,6 +197,23 @@ class TestSanitizePayload:
             {"scene_break_gap_seconds": "not-a-number"}
         )["scene_break_gap_seconds"] == 0.0
 
+    def test_species_name_language_enum(self):
+        """The species/family display language is a strict en/zh enum: absent
+        when not provided, normalised when present, English on anything else."""
+        assert "species_name_language" not in _sanitize_settings_payload({})
+        assert _sanitize_settings_payload(
+            {"species_name_language": "zh"}
+        )["species_name_language"] == "zh"
+        assert _sanitize_settings_payload(
+            {"species_name_language": " ZH "}
+        )["species_name_language"] == "zh"
+        assert _sanitize_settings_payload(
+            {"species_name_language": "fr"}
+        )["species_name_language"] == "en"
+        assert _sanitize_settings_payload(
+            {"species_name_language": None}
+        )["species_name_language"] == "en"
+
     def test_unknown_keys_preserved_via_passthrough(self):
         """Unknown keys should be preserved for forward compatibility."""
         payload = {

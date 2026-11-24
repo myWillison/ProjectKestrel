@@ -94,6 +94,10 @@ _ALLOWED_TOWER_DEVICES = {'auto', 'cpu', 'gpu'}
 # nothing is ever sent without the user's say-so.
 _ALLOWED_QUALITY_FEEDBACK_MODES = {'ask', 'always', 'never'}
 _ALLOWED_SCENE_FILMSTRIP_ORDERS = {'quality', 'time'}
+# Display language for species/family names. 'en' keeps the catalog's
+# canonical English names; 'zh' shows the bundled eBird/AviList Chinese
+# overlay (see kestrel_analyzer/species_names.py). Storage never changes.
+_ALLOWED_SPECIES_NAME_LANGUAGES = {'en', 'zh'}
 _QUALITY_FEEDBACK_INSTALL_ID_RE = re.compile(r'^qfi_[0-9a-f]{32}$')
 _ALLOWED_QUEUE_DETECTOR_NAMES = {'mdv5a', 'mdv1000-cedar'}
 # Biogeographic region codes for the species combobox. Sourced from the
@@ -634,6 +638,9 @@ def _sanitize_settings_payload(data: dict, emit_log: bool = False) -> dict:
         else:
             out['bird_regions'] = list(_DEFAULT_BIRD_REGIONS)
     _set_bool('show_scientific_names', default=False)
+    if 'species_name_language' in data:
+        out['species_name_language'] = _coerce_enum(
+            data.get('species_name_language'), _ALLOWED_SPECIES_NAME_LANGUAGES, default='en')
 
     _set_bool('includeSecondarySpecies', default=False)
     _set_bool('groupByFolder', default=True)

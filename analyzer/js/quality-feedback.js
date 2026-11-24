@@ -445,7 +445,7 @@
         for (const en of entries) {
           const row = _qfEl('div', 'qf-log-row');
           const when = _qfEl('span', 'qf-log-time', String(en.time || '').replace('T', ' ').replace('Z', ' UTC'));
-          const sp = Array.isArray(en.species) && en.species.length ? en.species.join(', ') : 'Unknown species';
+          const sp = Array.isArray(en.species) && en.species.length ? en.species.map(labelDisplayName).join(', ') : 'Unknown species';
           const what = _qfEl('span', 'qf-log-what', `${sp} · ${en.n || '?'} crops`);
           row.append(when, what);
           list.appendChild(row);

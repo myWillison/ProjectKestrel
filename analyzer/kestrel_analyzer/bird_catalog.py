@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .config import MODELS_DIR
+from .species_names import family_zh_map, normalize_scientific_name, zh_name_map
 
 CATALOG_PATH = MODELS_DIR / "birds" / "birds_global.csv"
 
@@ -85,6 +86,9 @@ class BirdRecord:
     alpha_4: str
     aliases: tuple[str, ...]
     is_model_species: bool
+    # Display-only Chinese name from the overlay (see ``species_names``).
+    # Empty when the overlay lacks the species or isn't shipped.
+    zh_name: str = ""
 
     def matches_any_region(self, selected: frozenset[str]) -> bool:
         """True if at least one of ``regions`` is in ``selected``.
@@ -107,6 +111,8 @@ class FamilyEntry:
     family_sci: str
     order: str
     regions: frozenset[str]
+    # Display-only Chinese family name (empty when unmapped).
+    family_zh: str = ""
 
     def matches_any_region(self, selected: frozenset[str]) -> bool:
         if not selected:
@@ -131,15 +137,17 @@ def _parse_aliases(s: str) -> tuple[str, ...]:
 def load_catalog(path: Path | None = None) -> list[BirdRecord]:
     """Read the bundled CSV. Skips header-equivalent or empty rows defensively."""
     p = Path(path) if path is not None else CATALOG_PATH
+    zh_names = zh_name_map()
     out: list[BirdRecord] = []
     with open(p, encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
             name = (row.get("canonical_common_name") or "").strip()
             if not name:
                 continue
+            sci = (row.get("scientific_name") or "").strip()
             out.append(BirdRecord(
                 canonical_common_name=name,
-                scientific_name=(row.get("scientific_name") or "").strip(),
+                scientific_name=sci,
                 family_sci=(row.get("family_sci") or "").strip(),
                 family_common=(row.get("family_common") or "").strip(),
                 order=(row.get("order") or "").strip(),
@@ -147,6 +155,7 @@ def load_catalog(path: Path | None = None) -> list[BirdRecord]:
                 alpha_4=(row.get("alpha_4") or "").strip().upper(),
                 aliases=_parse_aliases(row.get("aliases") or ""),
                 is_model_species=(row.get("is_model_species") or "").strip() == "1",
+                zh_name=zh_names.get(normalize_scientific_name(sci), ""),
             ))
     return out
 
@@ -181,6 +190,13 @@ _SCORE_TOKEN_PREFIX    = 700
 _SCORE_SUBSEQUENCE     = 600
 _SCORE_SUBSTRING       = 500
 _SCORE_SCI_SUBSTRING   = 450
+# Chinese display-name tiers (the ``species_name_language`` = zh overlay).
+# Exact zh hits sit just below the exact Latin hit so an English or Latin
+# query never loses to a coincidental zh substring, while a typed Chinese
+# name still beats every loose English tier.
+_SCORE_ZH_EXACT        = 890
+_SCORE_ZH_PREFIX       = 795
+_SCORE_ZH_SUBSTRING    = 515
 
 
 def _tokens(s: str) -> list[str]:
@@ -251,6 +267,7 @@ def score_record(query: str, rec: BirdRecord) -> int:
     sci = rec.scientific_name.lower()
     aliases_lower = [a.lower() for a in rec.aliases]
     alpha = rec.alpha_4.lower()
+    zh = rec.zh_name.lower()
 
     # 1. Alpha-4 exact match (case-insensitive)
     if alpha and len(q) == 4 and q == alpha:
@@ -263,6 +280,8 @@ def score_record(query: str, rec: BirdRecord) -> int:
         return _SCORE_ALIAS_EXACT
     if q == sci:
         return _SCORE_SCI_EXACT
+    if zh and q == zh:
+        return _SCORE_ZH_EXACT
 
     # 3. Prefix matches
     if common.startswith(q):
@@ -271,6 +290,8 @@ def score_record(query: str, rec: BirdRecord) -> int:
         return _SCORE_ALIAS_PREFIX
     if sci.startswith(q):
         return _SCORE_SCI_PREFIX
+    if zh and zh.startswith(q):
+        return _SCORE_ZH_PREFIX
 
     # 4. Token-prefix on common name. Each query token must prefix a word.
     qt = _tokens(q)
@@ -288,6 +309,8 @@ def score_record(query: str, rec: BirdRecord) -> int:
         return _SCORE_SUBSTRING
     if q in sci:
         return _SCORE_SCI_SUBSTRING
+    if zh and q in zh:
+        return _SCORE_ZH_SUBSTRING
 
     return 0
 
@@ -301,16 +324,21 @@ def score_family(query: str, entry: FamilyEntry) -> int:
 
     common = entry.family_common.lower()
     sci = entry.family_sci.lower()
+    zh = entry.family_zh.lower()
 
     if q == common:
         return _SCORE_COMMON_EXACT
     if q == sci:
         return _SCORE_SCI_EXACT
+    if zh and q == zh:
+        return _SCORE_ZH_EXACT
 
     if common.startswith(q):
         return _SCORE_COMMON_PREFIX
     if sci.startswith(q):
         return _SCORE_SCI_PREFIX
+    if zh and zh.startswith(q):
+        return _SCORE_ZH_PREFIX
 
     qt = _tokens(q)
     if qt and _token_prefix_match(qt, _tokens(common)):
@@ -325,6 +353,8 @@ def score_family(query: str, entry: FamilyEntry) -> int:
         return _SCORE_SUBSTRING
     if q in sci:
         return _SCORE_SCI_SUBSTRING
+    if zh and q in zh:
+        return _SCORE_ZH_SUBSTRING
 
     return 0
 
@@ -356,17 +386,24 @@ class BirdCatalog:
                 if r.order:
                     _fam_order.setdefault(r.family_common, r.order)
         self._families: list[FamilyEntry] = []
+        fam_zh = family_zh_map()
         for fc, sci in self._family_common_to_sci.items():
             self._families.append(FamilyEntry(
                 family_common=fc,
                 family_sci=sci,
                 order=_fam_order.get(fc, ""),
                 regions=frozenset(_fam_regions.get(fc, ())),
+                family_zh=fam_zh.get(normalize_scientific_name(sci), ""),
             ))
 
     @property
     def records(self) -> list[BirdRecord]:
         return self._records
+
+    @property
+    def families(self) -> list[FamilyEntry]:
+        """Unique family entries aggregated from the catalog records."""
+        return self._families
 
     def __len__(self) -> int:
         return len(self._records)
@@ -479,6 +516,7 @@ def record_to_dict(rec: BirdRecord) -> dict:
         "alpha_4": rec.alpha_4,
         "aliases": list(rec.aliases),
         "is_model_species": rec.is_model_species,
+        "zh_name": rec.zh_name,
     }
 
 
@@ -489,4 +527,5 @@ def family_entry_to_dict(entry: FamilyEntry) -> dict:
         "family_sci": entry.family_sci,
         "order": entry.order,
         "regions": sorted(entry.regions),
+        "family_zh": entry.family_zh,
     }

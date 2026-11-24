@@ -253,6 +253,14 @@
       await hydrateSettingsFromServer();
       // Load species→family taxonomy map (used for auto-link, cascade, and autocomplete)
       loadSpeciesFamilyMap();
+      // Pre-fetch the Chinese name overlay only when the user picked it, so an
+      // English-mode startup doesn't pay for an 11k-entry payload. Repaint once
+      // it lands in case the first render beat the fetch.
+      if (typeof zhSpeciesNamesEnabled === 'function' && zhSpeciesNamesEnabled()) {
+        loadSpeciesZhMap().then(() => {
+          if (rows.length && typeof renderScenes === 'function') renderScenes();
+        });
+      }
       // Then check donation threshold (after settings are loaded into localStorage)
       checkDonationThresholdOnStartup();
     })();

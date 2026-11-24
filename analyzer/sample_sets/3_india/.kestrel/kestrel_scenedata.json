@@ -49,11 +49,15 @@
         "IMG_8895.CR3"
       ],
       "name": "",
-      "status": "pending",
+      "status": "accepted",
       "user_tags": {
-        "species": [],
-        "families": [],
-        "finalized": false
+        "species": [
+          "White-throated Kingfisher"
+        ],
+        "families": [
+          "Kingfisher sp."
+        ],
+        "finalized": true
       }
     },
     "4": {

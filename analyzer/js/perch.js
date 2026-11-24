@@ -188,7 +188,7 @@
         for (const t of shown) {
           const chip = document.createElement('span');
           chip.className = 'chip' + (scene.reviewed ? ' manual-approved' : '');
-          chip.textContent = t;
+          chip.textContent = labelDisplayName(t);
           chipRow.appendChild(chip);
         }
         if (tagBag.length > shown.length) {
@@ -1537,7 +1537,9 @@
     /** Render a tag list as text ("(none)" when empty). */
     function _perchFmtTags(arr) {
       const a = Array.isArray(arr) ? arr.filter((x) => String(x).trim()) : [];
-      return a.length ? a.join(', ') : '(none)';
+      // The preview is read-only -- show the names in the display language
+      // while the pushed changeset keeps the canonical English tags.
+      return a.length ? a.map(labelDisplayName).join(', ') : '(none)';
     }
 
     /** Build one "Label: old → new" diff line (textContent only — tags are

@@ -28,3 +28,27 @@ publicly documented license.
   curated list of well-established introductions on top of IOC's
   native breeding ranges (``INTRODUCED_RANGES``).
 * Family display names (``family_common``) preserve the existing ``analyzer/models/scispecies_dispname.csv`` mapping where present and fall back to IOC's *Family (English)* otherwise.
+
+## Chinese display names (``birds_global_zh.csv``, ``birds_family_zh.csv``)
+
+These two files are a **display-only overlay**: they map the catalog's
+scientific names to Simplified Chinese species and family names used when the
+``species_name_language`` setting is ``zh``. Nothing in a user's folder, scene
+tags, folder settings or exported XMP depends on them, so they can be rebuilt
+without invalidating anything. Both are produced by ``tools/build_zh_names.py``:
+
+* **Species names** — the official Chinese (Simplified) name list published by
+the Cornell Lab of Ornithology / eBird for the AviList taxonomy
+(https://www.birds.cornell.edu/clementschecklist/ ; eBird species accounts at
+https://ebird.org/ ). Names are reproduced as factual name translations with
+full attribution here.
+* **Family names and the species eBird does not list** (13 extinct taxa marked
+  ``†`` in the IOC catalog) — China Bird Report / ChinaBirds bird-name list
+(https://www.birdreport.cn/ ), via the ``ioc`` dataset distributed with
+[SuperPicky](https://github.com/SuperPicky/SuperPicky) (AGPLv3).
+* **Toned pinyin** (``pinyin`` column, currently display-unused) — the
+  ``pinyin_toned`` table from the same SuperPicky ``ioc`` dataset.
+
+The overlay is keyed on scientific names so it survives IOC/common-name
+revisions; re-run ``python tools/build_zh_names.py`` after refreshing
+``birds_global.csv``.

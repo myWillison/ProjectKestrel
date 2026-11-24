@@ -348,6 +348,12 @@
   font-style: italic;
   margin-top: 1px;
 }
+/* Canonical English name under a translated (Chinese) combo row. */
+.chip-combo-alt {
+  color: #9ab;
+  font-size: 11px;
+  margin-top: 1px;
+}
 .chip-combo-alpha {
   background: rgba(86, 175, 255, 0.18);
   border: 1px solid rgba(86, 175, 255, 0.4);
@@ -384,6 +390,18 @@
   font-style: italic;
   color: #97a3b5;
   margin-top: 1px;
+}
+/* Second line under a translated pill: the canonical English name. Shown only
+   when the scientific-name subtext is off, so a Chinese pill still tells the
+   user which catalog entry it is. */
+.chip-alt {
+  font-size: 10px;
+  color: #97a3b5;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 .chip--with-sci .chip-x {
   position: absolute;
@@ -845,6 +863,13 @@
   padding: 3px 10px;
 }
 .card-pills > .chip.chip--with-sci .chip-sci {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  display: block;
+}
+.card-pills > .chip.chip--with-sci .chip-alt {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

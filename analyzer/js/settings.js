@@ -378,6 +378,9 @@
       const showSciCb = document.getElementById('showScientificNames');
       if (showSciCb) showSciCb.checked = !!getSetting('show_scientific_names', false);
 
+      const nameLangSel = document.getElementById('speciesNameLanguage');
+      if (nameLangSel) nameLangSel.value = String(getSetting('species_name_language', 'en')) === 'zh' ? 'zh' : 'en';
+
       const regionsPicker = document.getElementById('birdRegionsPicker');
       if (regionsPicker) {
         // Make sure catalog meta is loaded before we paint checkboxes -- the
@@ -449,10 +452,14 @@
       const finalRegions = birdRegions.length > 0 ? birdRegions : ['NA'];
       const showSciCbEl = document.getElementById('showScientificNames');
       const showScientificNames = showSciCbEl ? !!showSciCbEl.checked : !!existing.show_scientific_names;
+      const nameLangSelEl = document.getElementById('speciesNameLanguage');
+      const speciesNameLanguage = (nameLangSelEl && nameLangSelEl.value === 'zh') ? 'zh' : 'en';
       const prevRegions = Array.isArray(existing.bird_regions) ? existing.bird_regions.slice().sort().join(',') : '';
       const nextRegions = finalRegions.slice().sort().join(',');
       const regionsChanged = prevRegions !== nextRegions;
       const showSciChanged = !!existing.show_scientific_names !== showScientificNames;
+      const prevNameLanguage = String(existing.species_name_language || 'en') === 'zh' ? 'zh' : 'en';
+      const nameLanguageChanged = prevNameLanguage !== speciesNameLanguage;
 
       const settings = {
         ...existing, editor, customEditorPath, treeScanDepth,
@@ -470,6 +477,7 @@
         quality_feedback_mode: qualityFeedbackMode,
         bird_regions: finalRegions,
         show_scientific_names: showScientificNames,
+        species_name_language: speciesNameLanguage,
       };
       _autoSaveEnabled = autoSaveEnabled;
       if (!_autoSaveEnabled) {
@@ -508,8 +516,13 @@
       // Show-scientific-names + region changes don't affect the model output,
       // just the way pills render and which species the combobox surfaces.
       // Repaint anything that's currently on screen so the change is visible
-      // immediately rather than waiting for the next interaction.
-      if ((showSciChanged || regionsChanged) && rows.length > 0) {
+      // immediately rather than waiting for the next interaction. The name
+      // language is a display-only overlay, so it only needs the (cached) zh
+      // map and a repaint of the same widgets.
+      if (nameLanguageChanged && speciesNameLanguage === 'zh') {
+        try { await loadSpeciesZhMap(); } catch (_) { /* falls back to English names */ }
+      }
+      if ((showSciChanged || regionsChanged || nameLanguageChanged) && rows.length > 0) {
         await renderScenes();
         if (sceneDlg?.open && _currentScene) {
           renderTopbarTags(_currentScene);

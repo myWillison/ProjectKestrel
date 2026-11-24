@@ -1191,9 +1191,9 @@
           const sp = species[i];
           const spConf = sp.species_confidence ?? 0;
           const fmConf = sp.family_confidence ?? 0;
-          spEl.textContent = `${sp.species || '–'} (${spConf.toFixed(2)})`;
+          spEl.textContent = `${sp.species ? speciesDisplayName(sp.species) : '–'} (${spConf.toFixed(2)})`;
           spEl.className = 'ldc-species ' + (spConf >= CONF_HIGH ? 'high-conf' : spConf < CONF_LOW ? 'low-conf' : '');
-          fmEl.textContent = sp.family ? `${sp.family} (${fmConf.toFixed(2)})` : '–';
+          fmEl.textContent = sp.family ? `${familyDisplayName(sp.family)} (${fmConf.toFixed(2)})` : '–';
           fmEl.className = 'ldc-family ' + (fmConf >= CONF_HIGH ? 'high-conf' : fmConf < CONF_LOW ? 'low-conf' : '');
         } else {
           spEl.textContent = i < crops.length ? 'Classifying…' : '–';

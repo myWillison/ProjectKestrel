@@ -394,7 +394,8 @@
     function _sceneTooltipSpeciesLine(r) {
       const labels = getRowDisplayLabels(r);
       if (labels.hidden) return '';
-      return `Species: ${escapeHtml(labels.species)} (${fmt3(labels.speciesConf)})`;
+      const shown = speciesDisplayName(labels.species);
+      return `Species: ${escapeHtml(shown)} (${fmt3(labels.speciesConf)})`;
     }
 
     async function copyRowImageToClipboard(row, relPathOverride, copyLabel = 'image') {
@@ -725,7 +726,9 @@
           const spConf = fmt3(activeSpeciesConf);
           const fam = decodeEntities(activeFamily);
           const famConf = fmt3(activeFamilyConf);
-          metaTextEl.textContent = `${sp} (${spConf}) | ${fam} (${famConf}) · ${position}`;
+          // The header caption follows the species_name_language setting; the
+          // underlying row/crop fields stay canonical English.
+          metaTextEl.textContent = `${speciesDisplayName(sp)} (${spConf}) | ${familyDisplayName(fam)} (${famConf}) · ${position}`;
         }
       }
 
@@ -936,9 +939,10 @@
     function _buildSuggestedTagButton(tagType, suggestion) {
       if (!suggestion || !suggestion.name) return '';
       const escapedName = escapeHtml(suggestion.name);
+      const shownName = escapeHtml(labelDisplayName(suggestion.name));
       const pct = Math.round((suggestion.share || 0) * 100);
       const readableType = tagType === 'species' ? 'species' : 'family';
-      return `<button class="scene-chip-suggested" data-suggest-type="${readableType}" data-suggest-value="${escapedName}" title="Suggested ${readableType} (${pct}% confidence-weighted vote)">+ <em>${escapedName}</em></button>`;
+      return `<button class="scene-chip-suggested" data-suggest-type="${readableType}" data-suggest-value="${escapedName}" title="Suggested ${readableType} (${pct}% confidence-weighted vote): ${escapedName}">+ <em>${shownName}</em></button>`;
     }
 
     let _activeTagInputType = null; // 'species' or 'family'
@@ -1065,11 +1069,11 @@
       if (!scene || !lcQuery) return true;
       const species = scene.species || [];
       for (const sp of species) {
-        if (sp.toLowerCase().includes(lcQuery)) return true;
+        if (speciesNameMatches(sp, lcQuery)) return true;
       }
       const families = scene.families || [];
       for (const fm of families) {
-        if (fm.toLowerCase().includes(lcQuery)) return true;
+        if (familyNameMatches(fm, lcQuery)) return true;
       }
       if (!includeSci) return false;
       for (const sp of species) {
@@ -1138,10 +1142,12 @@
       for (const name of names) {
         const c = document.createElement('span');
         c.className = 'chip';
-        if (showSci) c.classList.add('chip--with-sci');
+        const shown = labelDisplayName(name);
+        const translated = shown !== name;
+        if (showSci || translated) c.classList.add('chip--with-sci');
         const primary = document.createElement('span');
         primary.className = 'chip-primary';
-        primary.textContent = name;
+        primary.textContent = shown;
         c.appendChild(primary);
         let titleStr = name;
         if (showSci) {
@@ -1155,6 +1161,11 @@
             c.appendChild(sci);
             titleStr = `${name} — ${sciText}`;
           }
+        } else if (translated) {
+          const alt = document.createElement('span');
+          alt.className = 'chip-alt';
+          alt.textContent = name;
+          c.appendChild(alt);
         }
         c.title = titleStr;
         pop.appendChild(c);
@@ -1284,20 +1295,29 @@
         return;
       }
       const showSci = _getShowSciNames();
+      const zhMode = zhSpeciesNamesEnabled();
       const html = items.map((rec, i) => {
         const name = rec.canonical_common_name || '';
         const sci  = rec.scientific_name || '';
         const fam  = rec.family_common || '';
         const code = rec.alpha_4 || '';
+        // In Chinese mode the row leads with the Chinese name and keeps the
+        // canonical English name as the muted second line, so the user can
+        // still recognise (and search) the English name. ``data-combo-name``
+        // always carries the English name -- that's what commit() stores.
+        const zh   = zhMode ? (rec.zh_name || '') : '';
+        const display = zh || name;
         const cls = i === highlightIdx ? 'chip-combo-item chip-combo-item--active' : 'chip-combo-item';
+        const altHtml = zh ? `<span class="chip-combo-alt">${escapeHtml(name)}</span>` : '';
         const sciHtml = (showSci && sci)
           ? `<span class="chip-combo-sci"><em>${escapeHtml(sci)}</em></span>` : '';
         const codeHtml = code ? `<span class="chip-combo-alpha">${escapeHtml(code)}</span>` : '';
-        const famHtml  = fam ? `<span class="chip-combo-family">${escapeHtml(fam)}</span>` : '';
+        const famHtml  = fam ? `<span class="chip-combo-family">${escapeHtml(familyDisplayName(fam))}</span>` : '';
         return (
           `<div class="${cls}" data-combo-index="${i}" data-combo-name="${escapeHtml(name)}">` +
             `<div class="chip-combo-left">` +
-              `<span class="chip-combo-name">${escapeHtml(name)}</span>` +
+              `<span class="chip-combo-name">${escapeHtml(display)}</span>` +
+              altHtml +
               sciHtml +
             `</div>` +
             `<div class="chip-combo-right">${codeHtml}${famHtml}</div>` +
@@ -1338,14 +1358,18 @@
         const name = entry.family_common || '';
         const sci  = entry.family_sci || '';
         const order = entry.order || '';
+        const zh   = zhSpeciesNamesEnabled() ? (entry.family_zh || '') : '';
+        const display = zh || name;
         const cls = i === highlightIdx ? 'chip-combo-item chip-combo-item--active' : 'chip-combo-item';
+        const altHtml = zh ? `<span class="chip-combo-alt">${escapeHtml(name)}</span>` : '';
         const sciHtml = sci
           ? `<span class="chip-combo-sci"><em>${escapeHtml(sci)}</em></span>` : '';
         const orderHtml = order ? `<span class="chip-combo-family">${escapeHtml(order)}</span>` : '';
         return (
           `<div class="${cls}" data-combo-index="${i}" data-combo-name="${escapeHtml(name)}">` +
             `<div class="chip-combo-left">` +
-              `<span class="chip-combo-name">${escapeHtml(name)}</span>` +
+              `<span class="chip-combo-name">${escapeHtml(display)}</span>` +
+              altHtml +
               sciHtml +
             `</div>` +
             `<div class="chip-combo-right">${orderHtml}</div>` +
@@ -1382,13 +1406,26 @@
       const chipClass = opts.chipClass || 'chip';
       const removeAttr = opts.removeAttr || '';
       const showSci = !!opts.showSci && !!sci;
+      // ``primary`` stays the canonical English tag -- it seeds the data-*
+      // attribute the remove handler reads -- while ``displayLabel`` is what
+      // the pill actually shows (Chinese when species_name_language = zh).
+      const displayLabel = opts.displayLabel ? String(opts.displayLabel) : primary;
+      const translated = displayLabel !== primary;
       const removeBtn = removeAttr
         ? `<span class="chip-x" data-${removeAttr}="${escapeHtml(primary)}" title="Remove '${escapeHtml(primary)}'">×</span>`
         : '';
       const sciHtml = showSci
         ? `<span class="chip-sci"><em>${escapeHtml(sci)}</em></span>` : '';
-      const cls = showSci ? `${chipClass} chip--with-sci` : chipClass;
-      return `<span class="${cls}"><span class="chip-primary">${escapeHtml(primary)}</span>${sciHtml}${removeBtn}</span>`;
+      // With the scientific name on, the Latin binomial already travels
+      // between languages; otherwise stack the English name so the user can
+      // still tell which catalog entry a Chinese pill refers to.
+      const altHtml = (translated && !showSci)
+        ? `<span class="chip-alt">${escapeHtml(primary)}</span>` : '';
+      const titleAttr = translated
+        ? ` title="${escapeHtml(sci ? `${primary} — ${sci}` : primary)}"`
+        : '';
+      const cls = (showSci || altHtml) ? `${chipClass} chip--with-sci` : chipClass;
+      return `<span class="${cls}"${titleAttr}><span class="chip-primary">${escapeHtml(displayLabel)}</span>${altHtml}${sciHtml}${removeBtn}</span>`;
     }
 
     /** Add a species to the draft and, if the species is in the taxonomy map,
@@ -1399,8 +1436,15 @@
      *  - matched indicates whether the species was found in the taxonomy map.
      */
     function _applySpeciesAutoLink(draft, rawName) {
-      const name = String(rawName || '').trim();
+      let name = String(rawName || '').trim();
       if (!name) return { speciesAdded: false, speciesValue: '', familyAdded: null, matched: false };
+      // A name typed (or pasted) in Chinese resolves back to the canonical
+      // English catalog name before anything is stored, so the folder CSV,
+      // scene tags and XMP sidecars never depend on the display language.
+      if (typeof canonicalSpeciesFromZh === 'function') {
+        const canonical = canonicalSpeciesFromZh(name);
+        if (canonical) name = canonical;
+      }
       const hit = _lookupFamilyForSpecies(name);
       const speciesValue = hit ? hit.canonical : name;
       const speciesBefore = draft.species.length;
@@ -1448,6 +1492,7 @@
           const sci = rec ? rec.scientific_name : '';
           html += _renderTagPillHtml(sp, sci, {
             chipClass, removeAttr: 'remove-species', showSci,
+            displayLabel: speciesDisplayName(sp),
           });
         }
       } else {
@@ -1482,6 +1527,7 @@
           }
           html += _renderTagPillHtml(fm, sci, {
             chipClass, removeAttr: 'remove-family', showSci,
+            displayLabel: familyDisplayName(fm),
           });
         }
       } else {
@@ -1696,22 +1742,25 @@
               _sceneEditDraft = null;
               if (result.matched) {
                 if (result.familyAdded) {
-                  showToast(`Added species "${result.speciesValue}" (family: ${result.familyAdded})`, 2200);
+                  showToast(`Added species "${speciesDisplayName(result.speciesValue)}" (family: ${familyDisplayName(result.familyAdded)})`, 2200);
                 } else {
-                  showToast(`Added species "${result.speciesValue}"`, 2000);
+                  showToast(`Added species "${speciesDisplayName(result.speciesValue)}"`, 2000);
                 }
               } else {
                 // Free-form species (not in taxonomy map). Per design, advance
                 // focus to the family input so the user can add it next.
-                showToast(`Added "${result.speciesValue}" — type family next`, 2200);
+                showToast(`Added "${speciesDisplayName(result.speciesValue)}" — type family next`, 2200);
                 reopenFamilyInput = true;
               }
             } else {
-              _sceneEditDraft.families = Array.from(new Set([..._sceneEditDraft.families, val])).sort();
+              // Same guard as species: a Chinese family name typed by hand
+              // is stored as its canonical English display name.
+              const famVal = (typeof canonicalFamilyFromZh === 'function' && canonicalFamilyFromZh(val)) || val;
+              _sceneEditDraft.families = Array.from(new Set([..._sceneEditDraft.families, famVal])).sort();
               _finalizeSceneReview(scene.id);
               _sceneEditMode = false;
               _sceneEditDraft = null;
-              showToast(`Added family "${val}"`, 2000);
+              showToast(`Added family "${familyDisplayName(famVal)}"`, 2000);
             }
           }
           if (reopenFamilyInput) {

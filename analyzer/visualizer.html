@@ -907,6 +907,20 @@
         scientific family name.
       </div>
 
+      <div class="row">
+        <label for="speciesNameLanguage" style="flex:1">Species name language</label>
+        <select id="speciesNameLanguage" title="Language used for the species and family names shown in Kestrel">
+          <option value="en">English</option>
+          <option value="zh">中文（简体）</option>
+        </select>
+      </div>
+      <div class="muted" style="font-size:12px;margin-top:-6px;margin-bottom:8px">
+        How species and family names are displayed and searched. Chinese names
+        follow eBird's official name list; the English name still appears under
+        translated pills. Folder data, tags and exported sidecars always keep
+        the English names, so switching back and forth never changes a folder.
+      </div>
+
       <h4 style="margin:12px 0 8px;padding-top:8px;border-top:1px solid #1d2230;color:#a0a8b8;font-size:13px;text-transform:uppercase;letter-spacing:0.5px">Star Rating System</h4>
 
       <div class="row">
@@ -1888,6 +1902,7 @@
   <script src="js/notifications.js"></script>
   <script src="js/blob-zoom.js"></script>
   <script src="js/species.js"></script>
+  <script src="js/species-names.js"></script>
   <script src="js/crop-data.js"></script>
   <script src="js/scenes.js"></script>
   <script src="js/scene-grid.js"></script>

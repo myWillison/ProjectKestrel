@@ -1580,6 +1580,39 @@ class Api:
         self._species_family_map_cache = result
         return result
 
+    def get_species_zh_map(self):
+        """Return Chinese display names for the bundled bird catalog.
+
+        ``species`` maps canonical English names to simplified Chinese names;
+        ``families`` maps family display names ("Thrush sp.") to Chinese
+        family names. Purely a display overlay -- storage (the CSV
+        ``species`` column, scene tags, XMP sidecars) stays canonical English,
+        and the frontend only consults this map when the
+        ``species_name_language`` setting is ``zh``. Cached on the bridge
+        instance like the family map above.
+        """
+        cached = getattr(self, '_species_zh_map_cache', None)
+        if cached is not None:
+            return cached
+        try:
+            cat = self._get_bird_catalog()
+            if cat is None:
+                raise RuntimeError('catalog unavailable')
+            species: dict[str, str] = {}
+            families: dict[str, str] = {}
+            for rec in cat.records:
+                if rec.canonical_common_name and rec.zh_name:
+                    species[rec.canonical_common_name] = rec.zh_name
+            for entry in cat.families:
+                if entry.family_common and entry.family_zh:
+                    families.setdefault(entry.family_common, entry.family_zh)
+            result = {'success': True, 'species': species, 'families': families}
+        except Exception as e:
+            error(f'[API] get_species_zh_map error: {e}')
+            result = {'success': False, 'error': str(e), 'species': {}, 'families': {}}
+        self._species_zh_map_cache = result
+        return result
+
     # ------------------------------------------------------------------ #
     #  Global bird catalog (regional + fuzzy combobox)                    #
     # ------------------------------------------------------------------ #
