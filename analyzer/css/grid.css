@@ -354,6 +354,12 @@
   font-size: 11px;
   margin-top: 1px;
 }
+/* Toned pinyin appended to the English alt line in Chinese mode. */
+.chip-combo-pinyin {
+  color: #789;
+  font-style: italic;
+  margin-left: 2px;
+}
 .chip-combo-alpha {
   background: rgba(86, 175, 255, 0.18);
   border: 1px solid rgba(86, 175, 255, 0.4);
@@ -369,6 +375,19 @@
   font-size: 11px;
   font-style: italic;
   flex-shrink: 0;
+}
+/* Shown on combo rows the backend had to surface outside the selected Bird
+   Regions (exact-name retry), so the user sees why a foreign bird appeared. */
+.chip-combo-offregion {
+  background: rgba(245, 197, 66, 0.14);
+  border: 1px solid rgba(245, 197, 66, 0.38);
+  color: #f5c542;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  cursor: help;
 }
 
 /* Pill variant: stacks the italicised scientific name on a second row

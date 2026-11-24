@@ -168,7 +168,7 @@ class QueryIndex:
             catalog = get_catalog()
         if wildlife_labels is None:
             wildlife_labels = _load_wildlife_labels()
-        from .species_names import zh_family_for_scientific
+        from .species_names import pinyin_compact_variants, zh_family_for_scientific
         self.by_key: Dict[str, List[Target]] = {}
         fam_regions: Dict[str, Set[str]] = {}
         fam_sci: Dict[str, str] = {}
@@ -178,9 +178,13 @@ class QueryIndex:
                        bool(getattr(r, "is_model_species", False)))
             for name in (r.canonical_common_name, *tuple(r.aliases or ()), r.scientific_name):
                 self._add(name, t)
-            # Chinese display name from the overlay (when shipped).
-            if getattr(r, "zh_name", ""):
-                self._add(r.zh_name, t)
+            # Chinese display names (simplified and traditional) and the
+            # space-less pinyin from the overlay (when shipped), so the same
+            # spellings the tag combobox accepts also filter the timeline.
+            for name in (getattr(r, "zh_name", ""), getattr(r, "zh_name_traditional", ""),
+                         *pinyin_compact_variants(getattr(r, "pinyin", "") or "")):
+                if name:
+                    self._add(name, t)
             if r.family_common:
                 fam_regions.setdefault(r.family_common, set()).update(r.regions)
                 if r.family_sci:
@@ -397,8 +401,12 @@ def semantic_text(parsed: ParsedQuery) -> str:
         # (best quality first) instead of ranking by a meaningless similarity.
         if not _ASCII_LETTER.search(text):
             return ""
+        # Mixed query ("大白鹭 in flight"): keep only the English remainder, so
+        # the Chinese name reaches SigLIP as nothing rather than as garbage.
+        if _CJK.search(text):
+            return rem if _ASCII_LETTER.search(rem) else ""
         return text
-    return rem
+    return rem if _ASCII_LETTER.search(rem) else ""
 
 
 @dataclass(frozen=True)

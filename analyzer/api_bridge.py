@@ -1705,6 +1705,12 @@ class Api:
         typed (may be empty to seed the dropdown), ``regions`` is the list of
         biogeographic codes currently selected in Settings, and ``limit`` caps
         the number of returned records.
+
+        The region acts as a ranking preference, not a wall: a typed name that
+        matches an off-region bird at least as well as the best in-region hit
+        is returned too (flagged ``off_region``, e.g. 普通翠鸟 / Common
+        Kingfisher is PAL-OR-AU, outside the default NA selection). Off-region
+        rows that match worse stay hidden; the empty query is region-scoped.
         """
         try:
             try:
@@ -1721,8 +1727,14 @@ class Api:
             except (TypeError, ValueError):
                 n = 20
             n = max(1, min(100, n))
-            results = cat.search(q, sel, limit=n)
-            return {'success': True, 'results': [record_to_dict(r) for r in results]}
+            results = cat.search(q, sel, limit=n, soft_regions=True)
+            payload = []
+            for r in results:
+                d = record_to_dict(r)
+                if not r.matches_any_region(frozenset(sel)):
+                    d['off_region'] = True
+                payload.append(d)
+            return {'success': True, 'results': payload}
         except Exception as e:
             error(f'[API] search_birds error: {e}')
             return {'success': False, 'error': str(e), 'results': []}
@@ -1744,8 +1756,14 @@ class Api:
             except (TypeError, ValueError):
                 n = 20
             n = max(1, min(100, n))
-            results = cat.search_families(q, sel, limit=n)
-            return {'success': True, 'results': [family_entry_to_dict(f) for f in results]}
+            results = cat.search_families(q, sel, limit=n, soft_regions=True)
+            payload = []
+            for f in results:
+                d = family_entry_to_dict(f)
+                if not f.matches_any_region(frozenset(sel)):
+                    d['off_region'] = True
+                payload.append(d)
+            return {'success': True, 'results': payload}
         except Exception as e:
             error(f'[API] search_families error: {e}')
             return {'success': False, 'error': str(e), 'results': []}

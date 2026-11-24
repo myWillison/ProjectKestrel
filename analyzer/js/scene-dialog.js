@@ -1252,7 +1252,7 @@
     // Up to SPECIES_COMBO_MAX visible matches at a time. Arrow keys navigate
     // the highlight; Enter commits the highlighted item (or the typed value
     // if no highlight); clicking an item commits that item.
-    const SPECIES_COMBO_MAX = 12;
+    const SPECIES_COMBO_MAX = 30;
     let _comboRequestSeq = 0;  // monotonically increasing -- drop stale responses
 
     /** Region-filtered fuzzy search via the backend bird catalog.
@@ -1300,18 +1300,30 @@
         const name = rec.canonical_common_name || '';
         const sci  = rec.scientific_name || '';
         const fam  = rec.family_common || '';
-        const code = rec.alpha_4 || '';
+        // Either code the catalog knows: the 4-letter banding code, else the
+        // longer eBird species code ("comkin1"). Both are searchable.
+        const code = rec.alpha_4 || rec.ebird_code || '';
         // In Chinese mode the row leads with the Chinese name and keeps the
-        // canonical English name as the muted second line, so the user can
-        // still recognise (and search) the English name. ``data-combo-name``
-        // always carries the English name -- that's what commit() stores.
+        // canonical English name as the muted second line (so the user can
+        // still recognise and search the English name), followed by the toned
+        // pinyin as a hint that the name can also be typed as "putongcuiniao"
+        // or "ptcn". ``data-combo-name`` always carries the English name --
+        // that's what commit() stores.
         const zh   = zhMode ? (rec.zh_name || '') : '';
         const display = zh || name;
         const cls = i === highlightIdx ? 'chip-combo-item chip-combo-item--active' : 'chip-combo-item';
-        const altHtml = zh ? `<span class="chip-combo-alt">${escapeHtml(name)}</span>` : '';
+        const pinyinHtml = (zh && rec.pinyin)
+          ? ` <span class="chip-combo-pinyin">· ${escapeHtml(rec.pinyin)}</span>` : '';
+        const altHtml = zh
+          ? `<span class="chip-combo-alt">${escapeHtml(name)}${pinyinHtml}</span>` : '';
         const sciHtml = (showSci && sci)
           ? `<span class="chip-combo-sci"><em>${escapeHtml(sci)}</em></span>` : '';
         const codeHtml = code ? `<span class="chip-combo-alpha">${escapeHtml(code)}</span>` : '';
+        // The backend retries without the region geofence when nothing matched
+        // inside the selected Bird Regions; flag those rows so the user knows
+        // why an "out of region" bird showed up in the dropdown.
+        const offRegionHtml = rec.off_region
+          ? '<span class="chip-combo-offregion" title="Not in the Bird Regions selected in Settings">off-region</span>' : '';
         const famHtml  = fam ? `<span class="chip-combo-family">${escapeHtml(familyDisplayName(fam))}</span>` : '';
         return (
           `<div class="${cls}" data-combo-index="${i}" data-combo-name="${escapeHtml(name)}">` +
@@ -1320,7 +1332,7 @@
               altHtml +
               sciHtml +
             `</div>` +
-            `<div class="chip-combo-right">${codeHtml}${famHtml}</div>` +
+            `<div class="chip-combo-right">${offRegionHtml}${codeHtml}${famHtml}</div>` +
           `</div>`
         );
       }).join('');
@@ -1328,7 +1340,7 @@
       dropdownEl.style.display = '';
     }
 
-    const FAMILY_COMBO_MAX = 12;
+    const FAMILY_COMBO_MAX = 20;
     let _familyComboRequestSeq = 0;
 
     async function _searchFamiliesForCombo(query) {
@@ -1361,10 +1373,15 @@
         const zh   = zhSpeciesNamesEnabled() ? (entry.family_zh || '') : '';
         const display = zh || name;
         const cls = i === highlightIdx ? 'chip-combo-item chip-combo-item--active' : 'chip-combo-item';
-        const altHtml = zh ? `<span class="chip-combo-alt">${escapeHtml(name)}</span>` : '';
+        const pinyinHtml = (zh && entry.family_pinyin)
+          ? ` <span class="chip-combo-pinyin">· ${escapeHtml(entry.family_pinyin)}</span>` : '';
+        const altHtml = zh
+          ? `<span class="chip-combo-alt">${escapeHtml(name)}${pinyinHtml}</span>` : '';
         const sciHtml = sci
           ? `<span class="chip-combo-sci"><em>${escapeHtml(sci)}</em></span>` : '';
         const orderHtml = order ? `<span class="chip-combo-family">${escapeHtml(order)}</span>` : '';
+        const offRegionHtml = entry.off_region
+          ? '<span class="chip-combo-offregion" title="Not in the Bird Regions selected in Settings">off-region</span>' : '';
         return (
           `<div class="${cls}" data-combo-index="${i}" data-combo-name="${escapeHtml(name)}">` +
             `<div class="chip-combo-left">` +
@@ -1372,7 +1389,7 @@
               altHtml +
               sciHtml +
             `</div>` +
-            `<div class="chip-combo-right">${orderHtml}</div>` +
+            `<div class="chip-combo-right">${offRegionHtml}${orderHtml}</div>` +
           `</div>`
         );
       }).join('');

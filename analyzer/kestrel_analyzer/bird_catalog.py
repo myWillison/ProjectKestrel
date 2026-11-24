@@ -15,12 +15,22 @@ curated list of established introductions such as House Sparrow).
 from __future__ import annotations
 
 import csv
+import threading
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable
 
+from . import name_search
 from .config import MODELS_DIR
-from .species_names import family_zh_map, normalize_scientific_name, zh_name_map
+from .name_search import _is_subsequence, _token_prefix_match  # noqa: F401  (re-exported for tests)
+from .species_names import (
+    char_pinyin_map,
+    family_zh_map,
+    normalize_scientific_name,
+    pinyin_for_zh,
+    zh_species_info,
+)
 
 CATALOG_PATH = MODELS_DIR / "birds" / "birds_global.csv"
 
@@ -89,6 +99,13 @@ class BirdRecord:
     # Display-only Chinese name from the overlay (see ``species_names``).
     # Empty when the overlay lacks the species or isn't shipped.
     zh_name: str = ""
+    # Search-only companions from the same overlay (see ``name_search``):
+    # the traditional spelling acts as an alias, pinyin is toned and one
+    # syllable per character ("pǔ tōng cuì niǎo"), ebird_code is the eBird
+    # species code ("comkin1").
+    zh_name_traditional: str = ""
+    pinyin: str = ""
+    ebird_code: str = ""
 
     def matches_any_region(self, selected: frozenset[str]) -> bool:
         """True if at least one of ``regions`` is in ``selected``.
@@ -111,8 +128,10 @@ class FamilyEntry:
     family_sci: str
     order: str
     regions: frozenset[str]
-    # Display-only Chinese family name (empty when unmapped).
+    # Display-only Chinese family name (empty when unmapped), plus the toned
+    # pinyin derived for it (see ``species_names.char_pinyin_map``).
     family_zh: str = ""
+    family_pinyin: str = ""
 
     def matches_any_region(self, selected: frozenset[str]) -> bool:
         if not selected:
@@ -137,7 +156,7 @@ def _parse_aliases(s: str) -> tuple[str, ...]:
 def load_catalog(path: Path | None = None) -> list[BirdRecord]:
     """Read the bundled CSV. Skips header-equivalent or empty rows defensively."""
     p = Path(path) if path is not None else CATALOG_PATH
-    zh_names = zh_name_map()
+    zh_names = zh_species_info()
     out: list[BirdRecord] = []
     with open(p, encoding="utf-8", newline="") as f:
         for row in csv.DictReader(f):
@@ -145,6 +164,7 @@ def load_catalog(path: Path | None = None) -> list[BirdRecord]:
             if not name:
                 continue
             sci = (row.get("scientific_name") or "").strip()
+            info = zh_names.get(normalize_scientific_name(sci))
             out.append(BirdRecord(
                 canonical_common_name=name,
                 scientific_name=sci,
@@ -155,7 +175,10 @@ def load_catalog(path: Path | None = None) -> list[BirdRecord]:
                 alpha_4=(row.get("alpha_4") or "").strip().upper(),
                 aliases=_parse_aliases(row.get("aliases") or ""),
                 is_model_species=(row.get("is_model_species") or "").strip() == "1",
-                zh_name=zh_names.get(normalize_scientific_name(sci), ""),
+                zh_name=info.zh if info else "",
+                zh_name_traditional=info.zh_traditional if info else "",
+                pinyin=info.pinyin if info else "",
+                ebird_code=info.ebird_code if info else "",
             ))
     return out
 
@@ -164,39 +187,29 @@ def load_catalog(path: Path | None = None) -> list[BirdRecord]:
 # Fuzzy search
 # ----------------------------------------------------------------------------
 #
-# We rank candidates with a small scoring function that prioritises (in order):
-#   1. Exact 4-letter code match (e.g. "amro" -> American Robin)
-#   2. Exact common-name or alias match
-#   3. Common-name prefix match
-#   4. Token-prefix match (each typed token prefixes some word in the name)
-#   5. Subsequence match (letters appear in order: "amrob" -> "American Robin")
-#   6. Substring match (the typed string appears anywhere)
-#
-# Each tier is non-overlapping (higher tier wins). Within a tier we break ties
-# by alphabetical canonical name so the ordering is stable and predictable.
-#
-# Scientific-name and alias hits use the same tiers but with a small penalty
-# so that an exact common-name hit always outranks an alias exact hit. This
-# keeps results predictable when the same string appears in multiple fields.
+# Ranking lives in ``name_search``: a tier ladder (code > Chinese > pinyin >
+# English > alias > scientific, each split into exact / prefix / token-prefix /
+# subsequence / substring / typo) evaluated over every searchable spelling of a
+# name. The constants below are re-exported so callers and tests can keep
+# referring to them from this module.
 
-_SCORE_ALPHA_EXACT     = 1000
-_SCORE_COMMON_EXACT    = 900
-_SCORE_ALIAS_EXACT     = 880
-_SCORE_SCI_EXACT       = 860
-_SCORE_COMMON_PREFIX   = 800
-_SCORE_ALIAS_PREFIX    = 770
-_SCORE_SCI_PREFIX      = 750
-_SCORE_TOKEN_PREFIX    = 700
-_SCORE_SUBSEQUENCE     = 600
-_SCORE_SUBSTRING       = 500
-_SCORE_SCI_SUBSTRING   = 450
+_SCORE_ALPHA_EXACT     = name_search.SCORE_CODE_EXACT
+_SCORE_COMMON_EXACT    = name_search.SCORE_COMMON_EXACT
+_SCORE_ALIAS_EXACT     = name_search.SCORE_ALIAS_EXACT
+_SCORE_SCI_EXACT       = name_search.SCORE_SCI_EXACT
+_SCORE_COMMON_PREFIX   = name_search.SCORE_COMMON_PREFIX
+_SCORE_ALIAS_PREFIX    = name_search.SCORE_ALIAS_PREFIX
+_SCORE_SCI_PREFIX      = name_search.SCORE_SCI_PREFIX
+_SCORE_TOKEN_PREFIX    = name_search.SCORE_TOKEN_PREFIX
+_SCORE_SUBSEQUENCE     = name_search.SCORE_SUBSEQUENCE
+_SCORE_SUBSTRING       = name_search.SCORE_SUBSTRING
+_SCORE_SCI_SUBSTRING   = name_search.SCORE_SCI_SUBSTRING
 # Chinese display-name tiers (the ``species_name_language`` = zh overlay).
-# Exact zh hits sit just below the exact Latin hit so an English or Latin
-# query never loses to a coincidental zh substring, while a typed Chinese
-# name still beats every loose English tier.
-_SCORE_ZH_EXACT        = 890
-_SCORE_ZH_PREFIX       = 795
-_SCORE_ZH_SUBSTRING    = 515
+# 中文优先: an exact Chinese hit outranks an exact English one; a typed
+# Chinese name beats every loose English tier.
+_SCORE_ZH_EXACT        = name_search.SCORE_ZH_EXACT
+_SCORE_ZH_PREFIX       = name_search.SCORE_ZH_PREFIX
+_SCORE_ZH_SUBSTRING    = name_search.SCORE_ZH_SUBSTRING
 
 
 def _tokens(s: str) -> list[str]:
@@ -215,148 +228,33 @@ def _tokens(s: str) -> list[str]:
     return out
 
 
-def _is_subsequence(needle: str, haystack: str) -> bool:
-    """True if ``needle``'s letters appear in order within ``haystack``.
-
-    Both must already be lowercased. Skips non-alphanumerics in ``haystack`` so
-    "amrob" matches "americanrobin" -> derived from "American Robin".
-    """
-    if not needle:
-        return True
-    i = 0
-    for ch in haystack:
-        if not (ch.isalnum() or ch == "'"):
-            continue
-        if ch == needle[i]:
-            i += 1
-            if i == len(needle):
-                return True
-    return False
+@lru_cache(maxsize=32768)
+def _keys_for_record(rec: BirdRecord) -> tuple[name_search.Key, ...]:
+    """Searchable spellings of a record. Records are immutable and hashable,
+    so this is computed once per record however often it is scored."""
+    return name_search.species_keys(rec)
 
 
-def _token_prefix_match(query_tokens: list[str], target_tokens: list[str]) -> bool:
-    """Every query token must be a prefix of some unique target token."""
-    if not query_tokens:
-        return True
-    if len(query_tokens) > len(target_tokens):
-        return False
-    used = [False] * len(target_tokens)
-    for q in query_tokens:
-        matched = False
-        for i, t in enumerate(target_tokens):
-            if not used[i] and t.startswith(q):
-                used[i] = True
-                matched = True
-                break
-        if not matched:
-            return False
-    return True
+@lru_cache(maxsize=4096)
+def _keys_for_family(entry: FamilyEntry) -> tuple[name_search.Key, ...]:
+    return name_search.family_keys(entry)
 
 
 def score_record(query: str, rec: BirdRecord) -> int:
     """Return a non-negative match score. ``0`` means no match.
 
-    The scoring is intentionally simple and deterministic; see the module
-    docstring for the tier ordering. Higher is better.
+    Best tier reached by any of the record's searchable spellings (English,
+    aliases, scientific, alpha / eBird code, Chinese, pinyin, initials); see
+    ``name_search`` for the ladder. Higher is better.
     """
-    q = (query or "").strip().lower()
-    if not q:
-        return 0
-
-    common = rec.canonical_common_name.lower()
-    sci = rec.scientific_name.lower()
-    aliases_lower = [a.lower() for a in rec.aliases]
-    alpha = rec.alpha_4.lower()
-    zh = rec.zh_name.lower()
-
-    # 1. Alpha-4 exact match (case-insensitive)
-    if alpha and len(q) == 4 and q == alpha:
-        return _SCORE_ALPHA_EXACT
-
-    # 2. Exact field matches
-    if q == common:
-        return _SCORE_COMMON_EXACT
-    if q in aliases_lower:
-        return _SCORE_ALIAS_EXACT
-    if q == sci:
-        return _SCORE_SCI_EXACT
-    if zh and q == zh:
-        return _SCORE_ZH_EXACT
-
-    # 3. Prefix matches
-    if common.startswith(q):
-        return _SCORE_COMMON_PREFIX
-    if any(a.startswith(q) for a in aliases_lower):
-        return _SCORE_ALIAS_PREFIX
-    if sci.startswith(q):
-        return _SCORE_SCI_PREFIX
-    if zh and zh.startswith(q):
-        return _SCORE_ZH_PREFIX
-
-    # 4. Token-prefix on common name. Each query token must prefix a word.
-    qt = _tokens(q)
-    if qt and _token_prefix_match(qt, _tokens(common)):
-        return _SCORE_TOKEN_PREFIX
-
-    # 5. Subsequence on alpha-stripped common name. Handles "amrob" -> American Robin
-    common_compact = "".join(c for c in common if c.isalnum() or c == "'")
-    q_compact = "".join(c for c in q if c.isalnum() or c == "'")
-    if q_compact and _is_subsequence(q_compact, common_compact):
-        return _SCORE_SUBSEQUENCE
-
-    # 6. Substring matches
-    if q in common or any(q in a for a in aliases_lower):
-        return _SCORE_SUBSTRING
-    if q in sci:
-        return _SCORE_SCI_SUBSTRING
-    if zh and q in zh:
-        return _SCORE_ZH_SUBSTRING
-
-    return 0
+    return name_search.score_keys(query, _keys_for_record(rec))
 
 
 def score_family(query: str, entry: FamilyEntry) -> int:
-    """Score a family entry against a search query. Same tier logic as
-    ``score_record`` but limited to family_common and family_sci fields."""
-    q = (query or "").strip().lower()
-    if not q:
-        return 0
-
-    common = entry.family_common.lower()
-    sci = entry.family_sci.lower()
-    zh = entry.family_zh.lower()
-
-    if q == common:
-        return _SCORE_COMMON_EXACT
-    if q == sci:
-        return _SCORE_SCI_EXACT
-    if zh and q == zh:
-        return _SCORE_ZH_EXACT
-
-    if common.startswith(q):
-        return _SCORE_COMMON_PREFIX
-    if sci.startswith(q):
-        return _SCORE_SCI_PREFIX
-    if zh and zh.startswith(q):
-        return _SCORE_ZH_PREFIX
-
-    qt = _tokens(q)
-    if qt and _token_prefix_match(qt, _tokens(common)):
-        return _SCORE_TOKEN_PREFIX
-
-    common_compact = "".join(c for c in common if c.isalnum() or c == "'")
-    q_compact = "".join(c for c in q if c.isalnum() or c == "'")
-    if q_compact and _is_subsequence(q_compact, common_compact):
-        return _SCORE_SUBSEQUENCE
-
-    if q in common:
-        return _SCORE_SUBSTRING
-    if q in sci:
-        return _SCORE_SCI_SUBSTRING
-    if zh and q in zh:
-        return _SCORE_ZH_SUBSTRING
-
-    return 0
+    """Score a family entry against a search query. Same ladder as
+    ``score_record`` over the family's English name (whole and per part),
+    scientific name, Chinese name and pinyin."""
+    return name_search.score_keys(query, _keys_for_family(entry))
 
 
 class BirdCatalog:
@@ -387,14 +285,23 @@ class BirdCatalog:
                     _fam_order.setdefault(r.family_common, r.order)
         self._families: list[FamilyEntry] = []
         fam_zh = family_zh_map()
+        # Family names have no pinyin of their own in the overlay; derive each
+        # character's reading from the species names (one syllable per char).
+        char_pinyin = char_pinyin_map(zh_species_info())
         for fc, sci in self._family_common_to_sci.items():
+            fz = fam_zh.get(normalize_scientific_name(sci), "")
             self._families.append(FamilyEntry(
                 family_common=fc,
                 family_sci=sci,
                 order=_fam_order.get(fc, ""),
                 regions=frozenset(_fam_regions.get(fc, ())),
-                family_zh=fam_zh.get(normalize_scientific_name(sci), ""),
+                family_zh=fz,
+                family_pinyin=pinyin_for_zh(fz, char_pinyin),
             ))
+        # Search indexes over species and families, built on first query (or
+        # ahead of time by ``warm_index``).
+        self._index: name_search.NameIndex | None = None
+        self._index_lock = threading.Lock()
 
     @property
     def records(self) -> list[BirdRecord]:
@@ -407,6 +314,21 @@ class BirdCatalog:
 
     def __len__(self) -> int:
         return len(self._records)
+
+    def _name_index(self) -> name_search.NameIndex:
+        with self._index_lock:
+            if self._index is None:
+                self._index = name_search.NameIndex(self._records, self._families)
+            return self._index
+
+    def warm_index(self) -> None:
+        """Build the search indexes on a background thread.
+
+        Indexing ~0.5 s of pure Python over 11k names; doing it while the
+        app starts up keeps the first keystroke in the tag combobox instant
+        instead of paying for it there. ``search`` blocks on the same lock,
+        so a query that arrives early simply waits for the build."""
+        threading.Thread(target=self._name_index, name="kestrel-name-index", daemon=True).start()
 
     def lookup(self, canonical_name: str) -> BirdRecord | None:
         if not canonical_name:
@@ -444,53 +366,46 @@ class BirdCatalog:
             return []
         return [r for r in self._records if r.matches_any_region(sel)]
 
-    def search(self, query: str, regions: Iterable[str], limit: int = 20) -> list[BirdRecord]:
-        """Region-filtered fuzzy search. Returns up to ``limit`` ranked records.
+    def search(self, query: str, regions: Iterable[str], limit: int = 20,
+               ignore_regions: bool = False, soft_regions: bool = False) -> list[BirdRecord]:
+        """Region-filtered search over every way a species can be named.
+
+        Returns up to ``limit`` records ranked by match specificity (see
+        ``name_search``): Chinese name, traditional spelling, English name and
+        aliases, scientific name, pinyin, pinyin initials, eBird / alpha code,
+        each as exact, prefix, token-prefix, subsequence, substring or a
+        one-letter typo.
 
         With an empty query, returns the alphabetical head of the region's
         catalog -- this matches the existing combobox UX (the dropdown is
         always populated, even before the user types).
+
+        ``ignore_regions`` drops the geofence entirely. The combobox uses it as
+        a last-resort retry: when a typed name matches nothing inside the
+        selected regions, the bird the user named explicitly (a vagrant, a photo
+        taken abroad, a mismatched region setting) must still be taggable.
+
+        ``soft_regions`` keeps the geofence as a preference instead: off-region
+        records that match at least as well as the best in-region hit are
+        merged into the result (better matches first, ties after the in-region
+        rows) so a Chinese or pinyin query is not answered with weak local
+        subsequence hits while the real match sits outside the region. The
+        empty query is always region-scoped.
         """
-        sel = frozenset(r for r in regions if r)
-        if not sel:
-            return []
-        q = (query or "").strip()
-        if not q:
-            in_region = [r for r in self._records if r.matches_any_region(sel)]
-            in_region.sort(key=lambda r: r.canonical_common_name.lower())
-            return in_region[:limit]
+        return self._name_index().search(query, "species", regions, ignore_regions, limit,
+                                         soft_regions=soft_regions)
 
-        scored: list[tuple[int, str, BirdRecord]] = []
-        for rec in self._records:
-            if not rec.matches_any_region(sel):
-                continue
-            s = score_record(q, rec)
-            if s > 0:
-                scored.append((s, rec.canonical_common_name.lower(), rec))
-        # Sort: descending score, then alphabetical (lowercased name)
-        scored.sort(key=lambda t: (-t[0], t[1]))
-        return [rec for _, _, rec in scored[:limit]]
+    def search_families(self, query: str, regions: Iterable[str], limit: int = 20,
+                        ignore_regions: bool = False, soft_regions: bool = False) -> list[FamilyEntry]:
+        """Region-filtered search across unique families.
 
-    def search_families(self, query: str, regions: Iterable[str], limit: int = 20) -> list[FamilyEntry]:
-        """Region-filtered fuzzy search across unique families."""
-        sel = frozenset(r for r in regions if r)
-        if not sel:
-            return []
-        q = (query or "").strip()
-        if not q:
-            in_region = [f for f in self._families if f.matches_any_region(sel)]
-            in_region.sort(key=lambda f: f.family_common.lower())
-            return in_region[:limit]
-
-        scored: list[tuple[int, str, FamilyEntry]] = []
-        for entry in self._families:
-            if not entry.matches_any_region(sel):
-                continue
-            s = score_family(q, entry)
-            if s > 0:
-                scored.append((s, entry.family_common.lower(), entry))
-        scored.sort(key=lambda t: (-t[0], t[1]))
-        return [entry for _, _, entry in scored[:limit]]
+        Same ranking as :meth:`search` over the family's English name (whole
+        and per ``/``/``,``/``&`` part), scientific name, Chinese name and
+        pinyin. ``ignore_regions`` and ``soft_regions`` have the same meaning
+        as in :meth:`search`.
+        """
+        return self._name_index().search(query, "family", regions, ignore_regions, limit,
+                                         soft_regions=soft_regions)
 
 
 _catalog_singleton: BirdCatalog | None = None
@@ -501,6 +416,7 @@ def get_catalog() -> BirdCatalog:
     global _catalog_singleton
     if _catalog_singleton is None:
         _catalog_singleton = BirdCatalog()
+        _catalog_singleton.warm_index()
     return _catalog_singleton
 
 
@@ -517,6 +433,9 @@ def record_to_dict(rec: BirdRecord) -> dict:
         "aliases": list(rec.aliases),
         "is_model_species": rec.is_model_species,
         "zh_name": rec.zh_name,
+        "zh_name_traditional": rec.zh_name_traditional,
+        "pinyin": rec.pinyin,
+        "ebird_code": rec.ebird_code,
     }
 
 
@@ -528,4 +447,5 @@ def family_entry_to_dict(entry: FamilyEntry) -> dict:
         "order": entry.order,
         "regions": sorted(entry.regions),
         "family_zh": entry.family_zh,
+        "family_pinyin": entry.family_pinyin,
     }

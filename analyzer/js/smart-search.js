@@ -442,6 +442,15 @@
         await renderScenes();
         return;
       }
+      // Chinese has no word boundaries, so the catalog parser (exact-name lookup)
+      // cannot classify a partial name like "翠鸟" that way -- and SigLIP 2's text
+      // tower is English-only, so a CJK query can never be a smart search. Treat
+      // any query containing ideographs as a plain tag filter: _sceneMatchesQuery
+      // matches substrings of the Chinese names, so partial names keep working.
+      if (typeof hasCjkText === 'function' && hasCjkText(q)) {
+        _smartShowFilter({ query: q, kind: 'filter', labels: [] });
+        return;
+      }
       // Fast path: a species/family name from the loaded folders filters at once,
       // with no bridge round trip. While the query is still only the start of
       // such a name, show the same instant filter and hold the classifier (and

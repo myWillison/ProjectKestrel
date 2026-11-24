@@ -368,6 +368,47 @@ class TestFuzzySearchRanking:
         assert "American Robin" not in names
 
 
+class TestIgnoreRegionsRetry:
+    """``ignore_regions=True`` is the combobox's last-resort retry (see
+    ``Api.search_birds``): a name that matches nothing inside the selected
+    regions must still resolve, otherwise an out-of-region bird the user typed
+    by name (普通翠鸟 / Common Kingfisher is PAL-OR-AU) is untaggable under the
+    default NA selection."""
+
+    def test_geofence_hides_off_region_species_by_default(self, catalog):
+        assert catalog.search("common kingfisher", ["NA"], limit=5) == []
+
+    def test_ignore_regions_finds_the_off_region_species(self, catalog):
+        hits = catalog.search("common kingfisher", ["NA"], limit=5, ignore_regions=True)
+        assert [r.canonical_common_name for r in hits][:1] == ["Common Kingfisher"]
+
+    def test_ignore_regions_still_ranks_and_caps(self, catalog):
+        # Chinese substring hits span the whole family; the retry must keep
+        # score ordering and honour the limit instead of dumping everything.
+        names = [r.canonical_common_name
+                 for r in catalog.search("翠鸟", ["NA"], limit=40, ignore_regions=True)]
+        assert "Common Kingfisher" in names
+        assert len(names) <= 40
+
+    def test_ignore_regions_works_without_any_selection(self, catalog):
+        # The bridge always sends a selection, but the flag must not depend on it.
+        names = [r.canonical_common_name
+                 for r in catalog.search("common kingfisher", [], limit=5, ignore_regions=True)]
+        assert "Common Kingfisher" in names
+
+    def test_family_retry_outside_the_region(self, catalog):
+        assert "Sunbirds" not in [f.family_common for f in catalog.search_families("太阳鸟科", ["NA"], limit=5)]
+        fams = [f.family_common
+                for f in catalog.search_families("太阳鸟科", ["NA"], limit=5, ignore_regions=True)]
+        assert "Sunbirds" in fams
+
+    def test_empty_query_with_ignore_regions_lists_the_whole_catalog(self, catalog):
+        # The retry is only used for a typed name; an empty query must still
+        # behave like the alphabetical head so the dropdown stays predictable.
+        names = [r.canonical_common_name for r in catalog.search("", ["NA"], limit=5, ignore_regions=True)]
+        assert names == sorted(names, key=str.lower)
+
+
 # ----------------------------------------------------------------------------
 # Score-tier sanity (pure unit tests, no catalog needed)
 # ----------------------------------------------------------------------------

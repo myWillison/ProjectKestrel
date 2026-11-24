@@ -27,7 +27,9 @@ from kestrel_analyzer.bird_catalog import (
     score_family,
     score_record,
     _SCORE_COMMON_EXACT,
+    _SCORE_SUBSTRING,
     _SCORE_ZH_EXACT,
+    _SCORE_ZH_SUBSTRING,
 )
 from kestrel_analyzer.species_names import (
     FAMILY_ZH_PATH,
@@ -121,7 +123,8 @@ class TestRankedSearch:
         fams = [f.family_common for f in catalog.search_families("鸭科", ["NA"], limit=5)]
         assert "Waterfowl sp." in fams
 
-    def test_zh_exact_outranks_loose_english_tiers(self):
+    def test_zh_exact_outranks_english_exact(self):
+        """中文优先: a typed Chinese name is the strongest name signal."""
         rec = BirdRecord(
             canonical_common_name="House Sparrow", scientific_name="Passer domesticus",
             family_sci="Passeridae", family_common="Old World Sparrow sp.", order="Passeriformes",
@@ -129,9 +132,12 @@ class TestRankedSearch:
             zh_name="家麻雀",
         )
         assert score_record("家麻雀", rec) == _SCORE_ZH_EXACT
-        # An English exact match still wins outright.
         assert score_record("house sparrow", rec) == _SCORE_COMMON_EXACT
-        assert score_record("house sparrow", rec) > score_record("家麻雀", rec)
+        assert score_record("家麻雀", rec) > score_record("house sparrow", rec)
+        # ...and an exact Chinese hit beats every loose English tier, while a
+        # loose Chinese hit ("麻雀") still beats an English substring.
+        assert score_record("家麻雀", rec) > score_record("house", rec) > 0
+        assert score_record("麻雀", rec) == _SCORE_ZH_SUBSTRING > _SCORE_SUBSTRING
 
     def test_zh_family_scoring(self):
         entry = FamilyEntry(
@@ -183,6 +189,19 @@ class TestQueryParsing:
     def test_english_query_keeps_its_semantic_text(self, index):
         parsed = qp.parse_query("Great Egret flying", index=index, regions=["NA"])
         assert qp.semantic_text(parsed) == "Great Egret flying"
+
+    def test_mixed_query_sends_only_the_english_remainder(self, index):
+        # "大白鹭 in flight": the chip filters to Great Egret, and SigLIP gets
+        # "in flight" -- never the Chinese name it cannot encode.
+        parsed = qp.parse_query("大白鹭 in flight", index=index, regions=["NA"])
+        assert [(m.kind, m.label) for m in parsed.matches] == [("species", "Great Egret")]
+        assert qp.semantic_text(parsed) == "in flight"
+
+    def test_unmatched_chinese_phrase_skips_the_text_encoder(self, index):
+        # No chip and nothing but ideographs left: nothing to embed.
+        parsed = qp.parse_query("在飞的鸟", index=index, regions=["NA"])
+        assert parsed.matches == []
+        assert qp.semantic_text(parsed) == ""
 
     def test_chinese_query_is_a_pure_filter(self, index):
         route = qp.classify_query("家麻雀", index=index)

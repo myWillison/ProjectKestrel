@@ -30,11 +30,15 @@
         "IMG_8572.CR3"
       ],
       "name": "",
-      "status": "pending",
+      "status": "accepted",
       "user_tags": {
-        "species": [],
-        "families": [],
-        "finalized": false
+        "species": [
+          "Spot-billed Pelican"
+        ],
+        "families": [
+          "Pelican sp."
+        ],
+        "finalized": true
       }
     },
     "3": {
@@ -55,6 +59,7 @@
           "White-throated Kingfisher"
         ],
         "families": [
+          "Gull/Tern/Skimmer sp.",
           "Kingfisher sp."
         ],
         "finalized": true
