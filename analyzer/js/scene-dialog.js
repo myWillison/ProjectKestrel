@@ -1696,9 +1696,14 @@
         const positionDropdown = () => {
           if (!dropdown || !inp) return;
           const rect = inp.getBoundingClientRect();
-          dropdown.style.left = Math.round(rect.left) + 'px';
+          // The list may grow wider than the input so full names fit; keep it
+          // inside the window instead of letting it run off the right edge.
+          const w = dropdown.offsetWidth || Math.max(Math.round(rect.width), 240);
+          const maxLeft = Math.max(8, window.innerWidth - w - 8);
+          dropdown.style.left = Math.round(Math.min(Math.max(8, rect.left), maxLeft)) + 'px';
           dropdown.style.top = Math.round(rect.bottom + 4) + 'px';
           dropdown.style.minWidth = Math.max(Math.round(rect.width), 240) + 'px';
+          dropdown.style.maxWidth = Math.max(240, window.innerWidth - 16) + 'px';
         };
 
         const refreshDropdown = async () => {

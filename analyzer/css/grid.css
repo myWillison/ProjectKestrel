@@ -313,7 +313,7 @@
   border-radius: 8px;
   z-index: 9999;
   min-width: 240px;
-  max-width: 360px;
+  max-width: 460px;
   max-height: 280px;
   overflow-y: auto;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
@@ -328,25 +328,30 @@
   padding: 5px 10px;
   cursor: pointer;
   color: #fff;
-  white-space: nowrap;
 }
 .chip-combo-item--active,
 .chip-combo-item:hover {
   background: rgba(86, 175, 255, 0.28);
 }
+/* Every spelling (Chinese, pinyin, English, scientific) must be readable in
+   full: long names wrap instead of being clipped with an ellipsis. */
 .chip-combo-left {
   display: flex; flex-direction: column; align-items: flex-start;
-  min-width: 0; flex: 1 1 auto; overflow: hidden;
+  min-width: 0; flex: 1 1 auto;
+  overflow-wrap: anywhere; word-break: break-word;
 }
 .chip-combo-right {
   display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  white-space: nowrap;
 }
-.chip-combo-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
-/* Chinese name and its toned pinyin on one line: 普通翠鸟 · pǔ tōng cuì niǎo */
+.chip-combo-name { font-weight: 500; }
+/* Chinese name and its toned pinyin on one line: 普通翠鸟 · pǔ tōng cuì niǎo
+   (the pinyin drops to its own line when the row is too narrow). */
 .chip-combo-title {
   display: flex;
   align-items: baseline;
-  gap: 5px;
+  flex-wrap: wrap;
+  gap: 2px 5px;
   min-width: 0;
   max-width: 100%;
 }
@@ -367,11 +372,6 @@
   color: #789;
   font-size: 11px;
   font-style: italic;
-  white-space: nowrap;
-  flex-shrink: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 .chip-combo-alpha {
   background: rgba(86, 175, 255, 0.18);
