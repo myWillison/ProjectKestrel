@@ -211,6 +211,10 @@
       k.textContent = `${d.head}: `;
       head.appendChild(k);
       head.appendChild(document.createTextNode(d.name));
+      // In Chinese mode species chips also carry the pinyin, so the name teaches
+      // its reading.
+      const py = (c.kind === 'species' && zhSpeciesNamesEnabled()) ? labelPinyin(c.label) : '';
+      if (py) line(py, 'smart-search-muted');
       if (c.scientific) line(c.scientific, 'smart-chip-tip-sci');
       if (c.fuzzy) line(`Matched “${c.text}” despite a typo.`);
       line(c.hits ? `${c.hits} photo${c.hits === 1 ? '' : 's'} in the open folders.` : 'No photos with this tag in the open folders.',

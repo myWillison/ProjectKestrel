@@ -534,9 +534,9 @@
           primary.className = 'chip-primary';
           primary.textContent = shown;
           c.appendChild(primary);
-          let titleStr = firstPill;
+          let sciText = '';
           if (_showSciOnCards) {
-            const sciText = _resolvePillSci(firstPill, cardPills);
+            sciText = _resolvePillSci(firstPill, cardPills) || '';
             if (sciText) {
               const sci = document.createElement('span');
               sci.className = 'chip-sci';
@@ -544,7 +544,6 @@
               em.textContent = sciText;
               sci.appendChild(em);
               c.appendChild(sci);
-              titleStr = `${firstPill} — ${sciText}`;
             }
           } else if (translated) {
             const alt = document.createElement('span');
@@ -552,7 +551,8 @@
             alt.textContent = firstPill;
             c.appendChild(alt);
           }
-          c.title = titleStr;
+          // Pinyin in the hover text, in either display language.
+          c.title = labelHoverTitle(firstPill, sciText);
           pillsWrap.appendChild(c);
         }
         if (overflowCount > 0) {

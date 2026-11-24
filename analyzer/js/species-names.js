@@ -17,6 +17,8 @@ let _zhSpeciesLower = null;   // "american robin" -> "旅鸫"
 let _zhFamiliesLower = null;  // "thrush sp." -> "鸫科"
 let _enByZhSpecies = null;    // "旅鸫" -> "American Robin" (for typed/pasted tags)
 let _enByZhFamily = null;     // "鸫科" -> "Thrush sp."
+let _pinyinSpeciesLower = null;  // "american robin" -> "lǚ dōng" (tag tooltips)
+let _pinyinFamiliesLower = null; // "thrush sp." -> "dōng kē"
 let _zhMapLoaded = false;
 let _zhMapPromise = null;
 
@@ -45,6 +47,8 @@ function loadSpeciesZhMap() {
   if (!hasPywebviewApi || !window.pywebview?.api?.get_species_zh_map) {
     _zhSpeciesLower = _zhSpeciesLower || {};
     _zhFamiliesLower = _zhFamiliesLower || {};
+    _pinyinSpeciesLower = _pinyinSpeciesLower || {};
+    _pinyinFamiliesLower = _pinyinFamiliesLower || {};
     return Promise.resolve();
   }
   _zhMapPromise = (async () => {
@@ -52,6 +56,8 @@ function loadSpeciesZhMap() {
       const res = await window.pywebview.api.get_species_zh_map();
       const species = (res && res.success && res.species) ? res.species : {};
       const families = (res && res.success && res.families) ? res.families : {};
+      const pinyin = (res && res.success && res.pinyin) ? res.pinyin : {};
+      const familyPinyin = (res && res.success && res.family_pinyin) ? res.family_pinyin : {};
       _zhSpeciesLower = {};
       _enByZhSpecies = {};
       for (const [en, zh] of Object.entries(species)) {
@@ -66,12 +72,23 @@ function loadSpeciesZhMap() {
         _zhFamiliesLower[String(en).toLowerCase()] = zh;
         if (!(zh in _enByZhFamily)) _enByZhFamily[zh] = en;
       }
+      // Toned pinyin for the tag tooltips -- shown in either display language.
+      _pinyinSpeciesLower = {};
+      for (const [en, py] of Object.entries(pinyin)) {
+        if (py) _pinyinSpeciesLower[String(en).toLowerCase()] = py;
+      }
+      _pinyinFamiliesLower = {};
+      for (const [en, py] of Object.entries(familyPinyin)) {
+        if (py) _pinyinFamiliesLower[String(en).toLowerCase()] = py;
+      }
       _zhMapLoaded = true;
       kdebug(`[loadSpeciesZhMap] ${Object.keys(_zhSpeciesLower).length} species, ${Object.keys(_zhFamiliesLower).length} families`);
     } catch (e) {
       console.warn('[loadSpeciesZhMap] failed:', e);
       _zhSpeciesLower = _zhSpeciesLower || {};
       _zhFamiliesLower = _zhFamiliesLower || {};
+      _pinyinSpeciesLower = _pinyinSpeciesLower || {};
+      _pinyinFamiliesLower = _pinyinFamiliesLower || {};
     } finally {
       _zhMapPromise = null;
     }
@@ -146,6 +163,33 @@ function familyNameMatches(name, lcQuery) {
 /** Does a lowercased query match the label in either language? */
 function labelNameMatches(name, lcQuery) {
   return speciesNameMatches(name, lcQuery) || familyNameMatches(name, lcQuery);
+}
+
+/** Toned pinyin for a canonical species or family name ("" when unknown). */
+function labelPinyin(name) {
+  if (!name) return '';
+  const key = String(name).trim().toLowerCase();
+  if (_pinyinSpeciesLower && _pinyinSpeciesLower[key]) return _pinyinSpeciesLower[key];
+  if (_pinyinFamiliesLower && _pinyinFamiliesLower[key]) return _pinyinFamiliesLower[key];
+  return '';
+}
+
+/** Hover text for a species/family tag.
+ *
+ *  In Chinese mode line 1 is the Chinese label plus its pinyin ("普通翠鸟 ·
+ *  pǔ tōng cuì niǎo") and line 2 the canonical English name, together with the
+ *  Latin binomial when one is known. English mode keeps the plain English
+ *  label with no pinyin hint. */
+function labelHoverTitle(name, sci) {
+  if (!name) return '';
+  const pinyin = zhSpeciesNamesEnabled() ? labelPinyin(name) : '';
+  const shown = labelDisplayName(name) || name;
+  const head = pinyin ? `${shown} · ${pinyin}` : shown;
+  const translated = shown !== name;
+  let sub = '';
+  if (translated) sub = sci ? `${name} — ${sci}` : name;
+  else if (sci) sub = sci;
+  return sub ? `${head}\n${sub}` : head;
 }
 
 /** True when the string contains CJK ideographs (i.e. a Chinese search). */

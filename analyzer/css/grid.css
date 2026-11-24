@@ -341,7 +341,15 @@
 .chip-combo-right {
   display: flex; align-items: center; gap: 8px; flex-shrink: 0;
 }
-.chip-combo-name { font-weight: 500; }
+.chip-combo-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+/* Chinese name and its toned pinyin on one line: 普通翠鸟 · pǔ tōng cuì niǎo */
+.chip-combo-title {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+}
 .chip-combo-sci {
   color: #9ab;
   font-size: 11px;
@@ -354,11 +362,16 @@
   font-size: 11px;
   margin-top: 1px;
 }
-/* Toned pinyin appended to the English alt line in Chinese mode. */
+/* Toned pinyin right of the Chinese name in Chinese mode. */
 .chip-combo-pinyin {
   color: #789;
+  font-size: 11px;
   font-style: italic;
-  margin-left: 2px;
+  white-space: nowrap;
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .chip-combo-alpha {
   background: rgba(86, 175, 255, 0.18);

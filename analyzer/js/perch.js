@@ -189,6 +189,8 @@
           const chip = document.createElement('span');
           chip.className = 'chip' + (scene.reviewed ? ' manual-approved' : '');
           chip.textContent = labelDisplayName(t);
+          // Hover carries the pinyin (and the English name when translated).
+          chip.title = labelHoverTitle(t);
           chipRow.appendChild(chip);
         }
         if (tagBag.length > shown.length) {

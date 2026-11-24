@@ -142,3 +142,19 @@ class TestFamilyComboRetry:
         res = api.search_families("", ["NA"])
         assert [r["family_common"] for r in res["results"]] == ["Kingfisher sp.", "Owl sp."]
         assert all("off_region" not in r for r in res["results"])
+
+
+class TestZhMapPinyin:
+
+    def test_map_carries_pinyin_for_tooltips(self, api):
+        # The tag tooltip reads the same overlay payload; pinyin must ride along
+        # with the Chinese names (species and families alike).
+        res = api.get_species_zh_map()
+        assert res["success"] is True
+        assert res["species"]["Common Kingfisher"] == "普通翠鸟"
+        assert res["pinyin"]["Common Kingfisher"] == "pǔ tōng cuì niǎo"
+        assert "Belted Kingfisher" not in res["pinyin"]  # record has no pinyin
+        assert res["family_pinyin"]["Kingfisher sp."] == "cuì niǎo kē"
+
+    def test_map_is_cached_on_the_bridge(self, api):
+        assert api.get_species_zh_map() is api.get_species_zh_map()

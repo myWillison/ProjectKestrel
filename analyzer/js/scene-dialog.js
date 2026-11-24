@@ -1149,9 +1149,9 @@
         primary.className = 'chip-primary';
         primary.textContent = shown;
         c.appendChild(primary);
-        let titleStr = name;
+        let sciText = '';
         if (showSci) {
-          const sciText = _resolvePillSci(name, allTerms);
+          sciText = _resolvePillSci(name, allTerms) || '';
           if (sciText) {
             const sci = document.createElement('span');
             sci.className = 'chip-sci';
@@ -1159,7 +1159,6 @@
             em.textContent = sciText;
             sci.appendChild(em);
             c.appendChild(sci);
-            titleStr = `${name} — ${sciText}`;
           }
         } else if (translated) {
           const alt = document.createElement('span');
@@ -1167,7 +1166,7 @@
           alt.textContent = name;
           c.appendChild(alt);
         }
-        c.title = titleStr;
+        c.title = labelHoverTitle(name, sciText);
         pop.appendChild(c);
       }
       document.body.appendChild(pop);
@@ -1303,19 +1302,19 @@
         // Either code the catalog knows: the 4-letter banding code, else the
         // longer eBird species code ("comkin1"). Both are searchable.
         const code = rec.alpha_4 || rec.ebird_code || '';
-        // In Chinese mode the row leads with the Chinese name and keeps the
-        // canonical English name as the muted second line (so the user can
-        // still recognise and search the English name), followed by the toned
-        // pinyin as a hint that the name can also be typed as "putongcuiniao"
-        // or "ptcn". ``data-combo-name`` always carries the English name --
-        // that's what commit() stores.
+        // In Chinese mode the row leads with the Chinese name and puts the
+        // toned pinyin right beside it as a typing hint ("普通翠鸟 · pǔ tōng
+        // cuì niǎo"); the canonical English name stays on the muted second
+        // line so the user can still recognise and search it.
+        // ``data-combo-name`` always carries the English name -- that's what
+        // commit() stores.
         const zh   = zhMode ? (rec.zh_name || '') : '';
         const display = zh || name;
         const cls = i === highlightIdx ? 'chip-combo-item chip-combo-item--active' : 'chip-combo-item';
         const pinyinHtml = (zh && rec.pinyin)
-          ? ` <span class="chip-combo-pinyin">· ${escapeHtml(rec.pinyin)}</span>` : '';
+          ? `<span class="chip-combo-pinyin">· ${escapeHtml(rec.pinyin)}</span>` : '';
         const altHtml = zh
-          ? `<span class="chip-combo-alt">${escapeHtml(name)}${pinyinHtml}</span>` : '';
+          ? `<span class="chip-combo-alt">${escapeHtml(name)}</span>` : '';
         const sciHtml = (showSci && sci)
           ? `<span class="chip-combo-sci"><em>${escapeHtml(sci)}</em></span>` : '';
         const codeHtml = code ? `<span class="chip-combo-alpha">${escapeHtml(code)}</span>` : '';
@@ -1328,7 +1327,7 @@
         return (
           `<div class="${cls}" data-combo-index="${i}" data-combo-name="${escapeHtml(name)}">` +
             `<div class="chip-combo-left">` +
-              `<span class="chip-combo-name">${escapeHtml(display)}</span>` +
+              `<span class="chip-combo-title"><span class="chip-combo-name">${escapeHtml(display)}</span>${pinyinHtml}</span>` +
               altHtml +
               sciHtml +
             `</div>` +
@@ -1374,9 +1373,9 @@
         const display = zh || name;
         const cls = i === highlightIdx ? 'chip-combo-item chip-combo-item--active' : 'chip-combo-item';
         const pinyinHtml = (zh && entry.family_pinyin)
-          ? ` <span class="chip-combo-pinyin">· ${escapeHtml(entry.family_pinyin)}</span>` : '';
+          ? `<span class="chip-combo-pinyin">· ${escapeHtml(entry.family_pinyin)}</span>` : '';
         const altHtml = zh
-          ? `<span class="chip-combo-alt">${escapeHtml(name)}${pinyinHtml}</span>` : '';
+          ? `<span class="chip-combo-alt">${escapeHtml(name)}</span>` : '';
         const sciHtml = sci
           ? `<span class="chip-combo-sci"><em>${escapeHtml(sci)}</em></span>` : '';
         const orderHtml = order ? `<span class="chip-combo-family">${escapeHtml(order)}</span>` : '';
@@ -1385,7 +1384,7 @@
         return (
           `<div class="${cls}" data-combo-index="${i}" data-combo-name="${escapeHtml(name)}">` +
             `<div class="chip-combo-left">` +
-              `<span class="chip-combo-name">${escapeHtml(display)}</span>` +
+              `<span class="chip-combo-title"><span class="chip-combo-name">${escapeHtml(display)}</span>${pinyinHtml}</span>` +
               altHtml +
               sciHtml +
             `</div>` +
@@ -1438,9 +1437,9 @@
       // still tell which catalog entry a Chinese pill refers to.
       const altHtml = (translated && !showSci)
         ? `<span class="chip-alt">${escapeHtml(primary)}</span>` : '';
-      const titleAttr = translated
-        ? ` title="${escapeHtml(sci ? `${primary} — ${sci}` : primary)}"`
-        : '';
+      // Hover text carries the pinyin in either language ("普通翠鸟 · pǔ tōng
+      // cuì niǎo") plus the English name / Latin binomial when they're hidden.
+      const titleAttr = ` title="${escapeHtml(labelHoverTitle(primary, showSci ? sci : ''))}"`;
       const cls = (showSci || altHtml) ? `${chipClass} chip--with-sci` : chipClass;
       return `<span class="${cls}"${titleAttr}><span class="chip-primary">${escapeHtml(displayLabel)}</span>${altHtml}${sciHtml}${removeBtn}</span>`;
     }

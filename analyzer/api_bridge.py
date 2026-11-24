@@ -1581,15 +1581,16 @@ class Api:
         return result
 
     def get_species_zh_map(self):
-        """Return Chinese display names for the bundled bird catalog.
+        """Return Chinese display names and pinyin for the bundled bird catalog.
 
         ``species`` maps canonical English names to simplified Chinese names;
         ``families`` maps family display names ("Thrush sp.") to Chinese
-        family names. Purely a display overlay -- storage (the CSV
-        ``species`` column, scene tags, XMP sidecars) stays canonical English,
-        and the frontend only consults this map when the
-        ``species_name_language`` setting is ``zh``. Cached on the bridge
-        instance like the family map above.
+        family names. ``pinyin`` / ``family_pinyin`` carry the toned pinyin
+        ("pǔ tōng cuì niǎo") the tag tooltips show as a hint. Purely a display
+        overlay -- storage (the CSV ``species`` column, scene tags, XMP
+        sidecars) stays canonical English, and the frontend only consults the
+        Chinese maps when the ``species_name_language`` setting is ``zh``.
+        Cached on the bridge instance like the family map above.
         """
         cached = getattr(self, '_species_zh_map_cache', None)
         if cached is not None:
@@ -1600,16 +1601,28 @@ class Api:
                 raise RuntimeError('catalog unavailable')
             species: dict[str, str] = {}
             families: dict[str, str] = {}
+            pinyin: dict[str, str] = {}
+            family_pinyin: dict[str, str] = {}
             for rec in cat.records:
-                if rec.canonical_common_name and rec.zh_name:
+                if not rec.canonical_common_name:
+                    continue
+                if rec.zh_name:
                     species[rec.canonical_common_name] = rec.zh_name
+                if rec.pinyin:
+                    pinyin[rec.canonical_common_name] = rec.pinyin
             for entry in cat.families:
-                if entry.family_common and entry.family_zh:
+                if not entry.family_common:
+                    continue
+                if entry.family_zh:
                     families.setdefault(entry.family_common, entry.family_zh)
-            result = {'success': True, 'species': species, 'families': families}
+                if entry.family_pinyin:
+                    family_pinyin.setdefault(entry.family_common, entry.family_pinyin)
+            result = {'success': True, 'species': species, 'families': families,
+                      'pinyin': pinyin, 'family_pinyin': family_pinyin}
         except Exception as e:
             error(f'[API] get_species_zh_map error: {e}')
-            result = {'success': False, 'error': str(e), 'species': {}, 'families': {}}
+            result = {'success': False, 'error': str(e), 'species': {}, 'families': {},
+                      'pinyin': {}, 'family_pinyin': {}}
         self._species_zh_map_cache = result
         return result
 
